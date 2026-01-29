@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+##Infrastructure Security Agent (Temporal-Backed)
 
-## Getting Started
+##Overview
+This repository contains a functional "Agent Runtime" that automates cloud infrastructure security triaging . Built with Next.js and Temporal, the system identifies misconfigurations in cloud resources (like S3 Buckets or EC2 instances) and generates executable remediation plans.
 
-First, run the development server:
+##High-Level Architecture
+The system follows a strict separation between orchestration and execution to meet the senior-level requirements for systems thinking :
 
-```bash
+Next.js Frontend: Provides the interface for users to input a Resource ID and select the resource type (S3 or EC2) .
+
+Temporal Workflow (Orchestrator): Coordinates the 3-step audit process. It manages the state and ensures that if a tool fails, the audit can resume without losing data.
+
+Temporal Activities (Tools): These are the modular "hands" of the agent. Each tool (Metadata Fetch, Risk Analysis, and Fix Generation) runs as an independent, retryable unit.
+
+##Engineering Decisions
+1. Workflow Determinism
+To satisfy Temporal’s "Non-Negotiable" constraints, the infrastructureAuditWorkflow is strictly deterministic. It contains no API calls or random logic. All "side-effectful" code—such as simulating a cloud metadata fetch—is isolated in Activities.
+
+2. Failure Handling and Retries
+We implemented explicit retry and timeout configurations to ensure the agent is "production-minded":
+
+Analysis Activity: Given that security analysis often involves high-latency LLM or policy engine calls, this activity is configured with a 1-minute timeout.
+
+Stateful Recovery: If the system fails during the final "Remediation Script" generation, Temporal keeps the results of the "Metadata Fetch" and "Risk Analysis" in memory. When the worker restarts, it picks up exactly where it left off.
+
+3. Structured Data Contracts
+The system uses TypeScript to enforce clear input/output boundaries. Each audit produces a structured result containing the violationFound boolean, a severity level (e.g., CRITICAL), and a specific remediationPlan.
+
+##Setup Instructions
+Prerequisites
+Node.js (v18+)
+
+Temporal CLI (Install instructions)
+
+1. Start Temporal Server
+Bash
+
+temporal server start-dev
+2. Start the Worker
+In a new terminal, run the background process that executes the audit tools:
+
+Bash
+
+npx tsx src/temporal/worker.ts
+3. Start the Frontend
+In a separate terminal:
+
+Bash
+
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Visit http://localhost:3000, enter a Resource ID, and click "Start Security Audit" .
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+##Production Roadmap
+If this were a production system at Conigma, I would implement the following:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Human-in-the-Loop: Use Temporal Signals to pause the workflow after a "CRITICAL" violation is found, waiting for a human admin to click "Approve" before the remediation script is finalized.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Real-time Status: Use Temporal Queries to allow the Next.js UI to poll for the current step (e.g., "Step 2: Analyzing Risk...") so the user isn't left waiting on a spinner.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Tool Extensibility (MCP): Wrap the activities in the Model Context Protocol (MCP) so that new security scanners can be plugged into the agent runtime without changing the core workflow code.

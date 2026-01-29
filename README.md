@@ -36,23 +36,21 @@ I implemented explicit retry policies for every tool:
 
 ### 1. Start the Orchestration Server
 In your first terminal, start the Temporal development server:
-```bash
+
 temporal server start-dev
 2. Start the Agent Worker
 The worker is the process that actually runs the tools. In a second terminal:
 
-Bash
-
 npx tsx src/temporal/worker.ts
+
 3. Start the Web Interface
 In a third terminal:
 
-Bash
-
 npm run dev
+
 Open http://localhost:3000 to interact with the agent.
 
-Production Considerations:
+## Production Considerations:
 For a production-grade system, we would move beyond this minimal version:
 
 Approval Gates: For critical security fixes, I would add a "Signal" step where the workflow pauses and waits for a human to click "Approve" in the UI before continuing.

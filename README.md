@@ -1,27 +1,32 @@
-# Infrastructure Security Agent (Temporal-Backed)
+# Infrastructure Security Agent: Workflow Implementation
 
-## Overview
-This repository contains a functional "Agent Runtime" that automates cloud infrastructure security triaging. Built with **Next.js** and **Temporal**, the system identifies misconfigurations in cloud resources (like S3 Buckets or EC2 instances) and generates executable remediation plans.
+## Problem
+Most automation tools are fragile. If the internet blips or a tool takes too long to respond, the whole process fails and you have to start from the beginning. For security audits, this is expensive and confusing because you end up with half-finished work.
 
-## High-Level Architecture
-The system follows a strict separation between orchestration and execution to meet the requirements for systems thinking:
+## How this Agent Works:
+This project implements an "Agent Runtime" that treats a security audit as a long running, reliable story rather than a single script execution.
 
-* **Next.js Frontend**: Provides the interface for users to input a Resource ID and select the resource type (S3 or EC2).
-* **Temporal Workflow (Orchestrator)**: Coordinates the 3-step audit process. It manages the state and ensures that if a tool fails, the audit can resume without losing data.
-* **Temporal Activities (Tools)**: These are the modular "hands" of the agent. Each tool (Metadata Fetch, Risk Analysis, and Fix Generation) runs as an independent, retryable unit.
+1.  **The Trigger**: A user provides a Resource ID (like an S3 bucket name) through the Next.js frontend. This initiates the workflow.
+2.  **The Workflow**: The Workflow doesn't perform the work itself. Instead, it holds the plan. It knows it must fetch data, analyze it, and then generate a fix. Because it is a Temporal workflow, it "remembers" exactly which step it is on.
+3.  **The Tools (Activities)**:
+    * **Step 1: Discovery**: The agent calls a tool to fetch resource metadata.
+    * **Step 2: Analysis**: The metadata is passed to a specialized tool that looks for security violations (e.g., public access).
+    * **Step 3: Remediation**: Based on the analysis, a final tool generates a specific command to fix the vulnerability.
+4.  **The Result**: The Workflow gathers these results into a structured report and sends it back to the user.
 
-## Engineering Decisions
+## Technical Decisions
 
-### 1. Workflow Determinism
-To satisfy Temporal’s core constraints, the `infrastructureAuditWorkflow` is strictly deterministic. It contains no API calls or random logic. All side-effectful code—such as simulating a cloud metadata fetch—is isolated in Activities.
+### Why separate the Workflow from the Tools?
+I followed a strict separation between the **Workflow** and **Activities (Tools)** to ensure Determinism.
 
-### 2. Failure Handling and Retries
-We implemented explicit retry and timeout configurations to ensure the agent is production-minded:
-* **Analysis Activity**: Given that security analysis often involves high-latency LLM or policy engine calls, this activity is configured with a 1-minute timeout.
-* **Stateful Recovery**: If the system fails during the final "Remediation Script" generation, Temporal keeps the results of the "Metadata Fetch" and "Risk Analysis" in memory. When the worker restarts, it picks up exactly where it left off.
+* The **Workflow** is purely logic. It doesn't talk to the outside world directly. This makes it deterministic, meaning if we re-run the logic, it always behaves the same way.
+* The **Activities** handle the messy work, like simulated API calls. By keeping these separate, I ensured that if a "Tool" fails, the "Workflow" can simply try again without getting confused.
 
-### 3. Structured Data Contracts
-The system uses TypeScript to enforce clear input/output boundaries. Each audit produces a structured result containing the `violationFound` boolean, a `severity` level (e.g., CRITICAL), and a specific `remediationPlan`.
+### Handling Failures and Retries
+I implemented explicit retry policies for every tool:
+
+* If the **Analysis Tool** is slow (common with AI or complex policy engines), I gave it a 1-minute timeout.
+* If a tool fails after multiple retries, Temporal saves the state of the audit. When the issue is fixed, the agent resumes from the failed step instead of re-running the parts that already succeeded.
 
 ## Setup Instructions
 
@@ -29,36 +34,29 @@ The system uses TypeScript to enforce clear input/output boundaries. Each audit 
 * Node.js (v18+)
 * Temporal CLI
 
-### 1. Start Temporal Server
+### 1. Start the Orchestration Server
+In your first terminal, start the Temporal development server:
 ```bash
 temporal server start-dev
+2. Start the Agent Worker
+The worker is the process that actually runs the tools. In a second terminal:
 
-```
+Bash
 
-### 2. Start the Worker
-
-In a new terminal, run the background process that executes the audit tools:
-
-```bash
 npx tsx src/temporal/worker.ts
+3. Start the Web Interface
+In a third terminal:
 
-```
+Bash
 
-### 3. Start the Frontend
-
-In a separate terminal:
-
-```bash
 npm run dev
+Open http://localhost:3000 to interact with the agent.
 
-```
+Production Considerations:
+For a production-grade system, we would move beyond this minimal version:
 
-Visit `http://localhost:3000`, enter a Resource ID, and click **"Start Security Audit"**.
+Approval Gates: For critical security fixes, I would add a "Signal" step where the workflow pauses and waits for a human to click "Approve" in the UI before continuing.
 
-## Production Roadmap
+Tool Discovery: I would implement the MCP. This would allow the agent to "pick" from a library of tools dynamically rather than having them hard-coded into the workflow.
 
-If this were a production system, I would implement the following:
-
-* **Human-in-the-Loop**: Use Temporal **Signals** to pause the workflow after a "CRITICAL" violation is found, waiting for a human admin to approve before the remediation script is finalized.
-* **Real-time Status**: Use Temporal **Queries** to allow the Next.js UI to poll for the current step (e.g., "Step 2: Analyzing Risk...") so the user has immediate feedback.
-* **Tool Extensibility (MCP)**: Wrap the activities in the **Model Context Protocol (MCP)** so that new security scanners can be plugged into the agent runtime without changing the core workflow logic.
+Progress Tracking: I would use Queries so the UI can show exactly which step the agent is currently working on in real-time.

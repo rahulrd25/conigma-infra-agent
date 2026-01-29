@@ -38,8 +38,10 @@ I implemented explicit retry policies for every tool:
 In your first terminal, start the Temporal development server:
 
 temporal server start-dev
+
 2. Start the Agent Worker
-The worker is the process that actually runs the tools. In a second terminal:
+The worker is the process that actually runs the tools. 
+In a second terminal:
 
 npx tsx src/temporal/worker.ts
 

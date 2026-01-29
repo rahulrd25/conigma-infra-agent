@@ -39,13 +39,13 @@ In your first terminal, start the Temporal development server:
 
 `temporal server start-dev`
 
-2. Start the Agent Worker
+### 2. Start the Agent Worker
 The worker is the process that actually runs the tools. 
 In a second terminal:
 
 `npx tsx src/temporal/worker.ts`
 
-3. Start the Web Interface
+### 3. Start the Web Interface
 In a third terminal:
 
 `npm run dev`
@@ -53,10 +53,10 @@ In a third terminal:
 Open http://localhost:3000 to interact with the agent.
 
 ## Production Considerations:
-For a production-grade system, we would move beyond this minimal version:
+For a production-grade system, I would move beyond this minimal version:
 
-Approval Gates: For critical security fixes, I would add a "Signal" step where the workflow pauses and waits for a human to click "Approve" in the UI before continuing.
+* Approval Gates: For critical security fixes, I would add a "Signal" step where the workflow pauses and waits for a human to click "Approve" in the UI before continuing.
 
-Tool Discovery: I would implement the MCP. This would allow the agent to "pick" from a library of tools dynamically rather than having them hard-coded into the workflow.
+* Tool Discovery: I would implement the MCP. This would allow the agent to "pick" from a library of tools dynamically rather than having them hard-coded into the workflow.
 
-Progress Tracking: I would use Queries so the UI can show exactly which step the agent is currently working on in real-time.
+* Progress Tracking: I would use Queries so the UI can show exactly which step the agent is currently working on in real-time.
